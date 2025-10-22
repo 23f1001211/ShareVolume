@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title id="page-title">Loading...</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #333;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+      padding: 2rem;
+      width: 90%;
+      max-width: 600px;
+      text-align: center;
+    }
+    h1 {
+      color: #2c3e50;
+      margin-bottom: 1.5rem;
+    }
+    .data-card {
+      background: #f8f9fa;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin: 1rem 0;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    }
+    .data-value {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #3498db;
+    }
+    .data-label {
+      font-size: 0.9rem;
+      color: #7f8c8d;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .error {
+      color: #e74c3c;
+      background: #fdf2f2;
+      padding: 1rem;
+      border-radius: 8px;
+      margin: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="share-entity-name">Loading...</h1>
+    
+    <div class="data-card">
+      <div class="data-label">Maximum Shares Outstanding</div>
+      <div id="share-max-value" class="data-value">-</div>
+      <div>Year: <span id="share-max-fy">-</span></div>
+    </div>
+    
+    <div class="data-card">
+      <div class="data-label">Minimum Shares Outstanding</div>
+      <div id="share-min-value" class="data-value">-</div>
+      <div>Year: <span id="share-min-fy">-</span></div>
+    </div>
+    
+    <div id="error-container"></div>
+  </div>
+
+  <script>
+    // Initial data for Church & Dwight
+    const DEFAULT_CIK = '0000313927';
+    
+    // Get CIK from URL query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const cikParam = urlParams.get('CIK');
+    const cik = (cikParam && cikParam.length === 10) ? cikParam : DEFAULT_CIK;
+    
+    // Format CIK for SEC API
+    const formattedCik = `CIK${cik.padStart(10, '0')}`;
+    
+    // SEC API endpoint
+    const apiUrl = `https://data.sec.gov/api/xbrl/companyconcept/${formattedCik}/dei/EntityCommonStockSharesOutstanding.json`;
+    
+    // Fetch data from SEC API with proper User-Agent
+    async function fetchData() {
+      try {
+        const response = await fetch(apiUrl, {
+          headers: {
+            "User-Agent": "Financial Data Viewer (your-email@example.com)"
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch data: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        showError(`Error fetching data: ${error.message}`);
+        throw error;
+      }
+    }
+    
+    // Process data to find max and min shares
+    function processData(data) {
+      const entityName = data.entityName;
+      
+      // Filter shares for fy > 2020 and with numeric val
+      const shares = data.units.shares.filter(item => 
+        item.fy > "2020" && typeof item.val === 'number'
+      );
+      
+      if (shares.length === 0) {
+        throw new Error('No valid shares data found after filtering');
+      }
+      
+      // Find max and min
+      const max = shares.reduce((prev, current) => (prev.val > current.val) ? prev : current);
+      const min = shares.reduce((prev, current) => (prev.val < current.val) ? prev : current);
+      
+      return {
+        entityName,
+        max: {
+          val: max.val,
+          fy: max.fy
+        },
+        min: {
+          val: min.val,
+          fy: min.fy
+        }
+      };
+    }
+    
+    // Format number for display
+    function formatNumber(num) {
+      return new Intl.NumberFormat('en-US').format(num);
+    }
+    
+    // Update DOM with data
+    function updateUI(data) {
+      // Update title and h1
+      document.getElementById('page-title').textContent = data.entityName;
+      document.getElementById('share-entity-name').textContent = data.entityName;
+      
+      // Update max values
+      document.getElementById('share-max-value').textContent = formatNumber(data.max.val);
+      document.getElementById('share-max-fy').textContent = data.max.fy;
+      
+      // Update min values
+      document.getElementById('share-min-value').textContent = formatNumber(data.min.val);
+      document.getElementById('share-min-fy').textContent = data.min.fy;
+    }
+    
+    // Show error message
+    function showError(message) {
+      const errorContainer = document.getElementById('error-container');
+      errorContainer.innerHTML = `<div class="error">${message}</div>`;
+    }
+    
+    // Main function
+    async function main() {
+      try {
+        const rawData = await fetchData();
+        const processedData = processData(rawData);
+        updateUI(processedData);
+      } catch (error) {
+        console.error('Application error:', error);
+        showError('Failed to load financial data. Please try again later.');
+      }
+    }
+    
+    // Run main function
+    main();
+  </script>
+</body>
+</html>
